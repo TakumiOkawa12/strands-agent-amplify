@@ -1,39 +1,193 @@
-import { useEffect, useState } from "react";
-import type { Schema } from "../amplify/data/resource";
-import { generateClient } from "aws-amplify/data";
+// 必要なパッケージをインポート
+import { useState, useRef, useEffect, type FormEvent } from 'react';
+import { fetchAuthSession } from 'aws-amplify/auth';
+import ReactMarkdown from 'react-markdown';
+import './App.css';
 
-const client = generateClient<Schema>();
+// 環境変数から設定を取得
+const AGENT_ARN = import.meta.env.VITE_AGENT_ARN;
 
+// チャットメッセージの型定義
+interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  isToolUsing?: boolean;
+  toolCompleted?: boolean;
+  toolName?: string;
+}
+
+// メインのアプリケーションコンポーネント
 function App() {
-  const [todos, setTodos] = useState<Array<Schema["Todo"]["type"]>>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // メッセージ追加時に自動スクロール
   useEffect(() => {
-    client.models.Todo.observeQuery().subscribe({
-      next: (data) => setTodos([...data.items]),
-    });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // セッションIDをlocalStorageに初期化
+  useEffect(() => {
+    let sessionId = localStorage.getItem('session_id');
+    if (!sessionId) {
+      sessionId = crypto.randomUUID();
+      localStorage.setItem('session_id', sessionId);
+    }
   }, []);
 
-  function createTodo() {
-    client.models.Todo.create({ content: window.prompt("Todo content") });
-  }
+  // フォーム送信処理
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || loading) return;
 
+    // ユーザーメッセージを作成
+    const userMessage: Message = { id: crypto.randomUUID(), role: 'user', content: input.trim() };
+
+    // メッセージ配列に追加（ユーザー発言 + 空のAI応答）
+    setMessages(prev => [...prev, userMessage, { id: crypto.randomUUID(), role: 'assistant', content: '' }]);
+    setInput('');
+    setLoading(true);
+
+    // Cognito認証トークンを取得
+    const session = await fetchAuthSession();
+    const accessToken = session.tokens?.accessToken?.toString();
+
+    // session_id を取得
+    const sessionId = localStorage.getItem('session_id');
+
+    // AgentCore Runtime APIを呼び出し (multipart/form-data)
+    const url = `https://bedrock-agentcore.ap-northeast-1.amazonaws.com/runtimes/${encodeURIComponent(AGENT_ARN)}/invocations?qualifier=DEFAULT`;
+    const formData = new FormData();
+    formData.append('prompt', userMessage.content);
+    if (sessionId) {
+      formData.append('session_id', sessionId);
+    }
+    if (selectedFile) {
+      formData.append('attachments', selectedFile);
+    }
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+      body: formData,
+    });
+
+    // SSEストリーミングを処理
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let isInToolUse = false;
+    let toolIdx = -1;
+
+    // ストリームを読み続ける
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      // 受信データを行ごとに処理
+      for (const line of decoder.decode(value, { stream: true }).split('\n')) {
+        if (!line.startsWith('data: ')) continue;
+        const data = line.slice(6);
+        if (data === '[DONE]') continue;
+        const event = JSON.parse(data);
+
+        // ツール使用開始イベント
+        if (event.type === 'tool_use') {
+          isInToolUse = true;
+          const savedBuffer = buffer;
+          setMessages(prev => {
+            const msgs = [...prev];
+            if (savedBuffer) {
+              msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: savedBuffer };
+              toolIdx = msgs.length;
+              msgs.push({ id: crypto.randomUUID(), role: 'assistant', content: '', isToolUsing: true, toolName: event.tool_name });
+            } else {
+              toolIdx = msgs.length - 1;
+              msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], isToolUsing: true, toolName: event.tool_name };
+            }
+            return msgs;
+          });
+          buffer = '';
+          continue;
+        }
+
+        // テキストイベント（AI応答本文）
+        if (event.type === 'text' && event.data) {
+          if (isInToolUse && !buffer) {
+            // ツール実行後の最初のテキスト → ツールを完了状態に
+            const savedIdx = toolIdx;
+            setMessages(prev => {
+              const msgs = [...prev];
+              if (savedIdx >= 0 && savedIdx < msgs.length) msgs[savedIdx] = { ...msgs[savedIdx], toolCompleted: true };
+              msgs.push({ id: crypto.randomUUID(), role: 'assistant', content: event.data });
+              return msgs;
+            });
+            buffer = event.data;
+            isInToolUse = false;
+            toolIdx = -1;
+          } else {
+            // 通常のテキスト蓄積（ストリーミング表示）
+            buffer += event.data;
+            setMessages(prev => {
+              const msgs = [...prev];
+              msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: buffer, isToolUsing: false };
+              return msgs;
+            });
+          }
+        }
+      }
+    }
+    setLoading(false);
+  };
+
+  // チャットUI
   return (
-    <main>
-      <h1>My todos</h1>
-      <button onClick={createTodo}>+ new</button>
-      <ul>
-        {todos.map((todo) => (
-          <li key={todo.id}>{todo.content}</li>
-        ))}
-      </ul>
-      <div>
-        🥳 App successfully hosted. Try creating a new todo.
-        <br />
-        <a href="https://docs.amplify.aws/react/start/quickstart/#make-frontend-updates">
-          Review next step of this tutorial.
-        </a>
+    <div className="container">
+      <header className="header">
+        <h1 className="title">フルサーバーレスなAIエージェントアプリ</h1>
+        <p className="subtitle">AmplifyとAgentCoreで構築しています</p>
+      </header>
+
+      <div className="message-area">
+        <div className="message-container">
+          {messages.map(msg => (
+            <div key={msg.id} className={`message-row ${msg.role}`}>
+              <div className={`bubble ${msg.role}`}>
+                {msg.role === 'assistant' && !msg.content && !msg.isToolUsing && (
+                  <span className="thinking">考え中…</span>
+                )}
+                {msg.isToolUsing && (
+                  <span className={`tool-status ${msg.toolCompleted ? 'completed' : 'active'}`}>
+                    {msg.toolCompleted ? '✓' : '⏳'} {msg.toolName}
+                    {msg.toolCompleted ? 'ツールを利用しました' : 'を利用中...'}
+                  </span>
+                )}
+                {msg.content && !msg.isToolUsing && <ReactMarkdown>{msg.content}</ReactMarkdown>}
+              </div>
+            </div>
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
       </div>
-    </main>
+
+      <div className="form-wrapper">
+        <form onSubmit={handleSubmit} className="form">
+          <input
+            type="file"
+            onChange={e => setSelectedFile(e.target.files?.[0] ?? null)}
+            disabled={loading}
+            className="input"
+          />
+          <input value={input} onChange={e => setInput(e.target.value)} placeholder="メッセージを入力..." disabled={loading} className="input" />
+          <button type="submit" disabled={loading || !input.trim()} className="button">
+            {loading ? '⌛️' : '送信'}
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }
 
