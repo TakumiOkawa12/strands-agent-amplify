@@ -4,9 +4,9 @@ from strands.tools import tool
 from strands.tools.mcp import MCPClient
 from strands.models import BedrockModel
 from strands.experimental.steering import LLMSteeringHandler # ステアリング用
-from bedrock_agentcore.tools.code_interpreter import CodeInterpreterTool
+from strands_tools.code_interpreter import AgentCoreCodeInterpreter
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig, RetrievalConfig
 from bedrock_agentcore.memory.integrations.strands.session_manager import AgentCoreMemorySessionManager
 import os
@@ -20,7 +20,7 @@ model = BedrockModel(
 
 # 2. ツール設定 (MCPClient)
 mcp_client = MCPClient(
-    lambda: streamablehttp_client(
+    lambda: streamable_http_client(
         "https://knowledge-mcp.global.api.aws"
     )
 )
@@ -77,9 +77,7 @@ def search_internal_docs(query: str) -> str:
         return f"Knowledge Base retrieval failed: {str(e)}"
 
 # 3. Code Interpreter ツール設定（ファイル解析用）
-code_interpreter_tool = CodeInterpreterTool(
-    enable_file_uploads=True  # ユーザーアップロードファイルを扱えるようにする
-)
+code_interpreter_tool = AgentCoreCodeInterpreter()
 
 # 4. ステアリング設定（ポリシーの強制）
 # 例: 破壊的な操作の推奨を禁止し、公式ドキュメント参照を強制

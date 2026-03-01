@@ -1,5 +1,5 @@
 strands-agents
 strands-agents-tools
 strands-agents[otel]
-bedrock-agentcore
-bedrock-agentcore[strands-agents]
+
+bedrock-agentcore[code-interpreter,strands-agents]
