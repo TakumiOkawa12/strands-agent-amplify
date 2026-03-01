@@ -77,7 +77,9 @@ def search_internal_docs(query: str) -> str:
         return f"Knowledge Base retrieval failed: {str(e)}"
 
 # 3. Code Interpreter ツール設定（ファイル解析用）
-code_interpreter_tool = AgentCoreCodeInterpreter()
+code_interpreter_tool = AgentCoreCodeInterpreter(
+    region=os.getenv("AWS_REGION", "ap-northeast-1")
+)
 
 # 4. ステアリング設定（ポリシーの強制）
 # 例: 破壊的な操作の推奨を禁止し、公式ドキュメント参照を強制
