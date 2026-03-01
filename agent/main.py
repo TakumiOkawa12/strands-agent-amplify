@@ -129,7 +129,8 @@ async def invoke_agent(payload, context):
     actor_id = context.identity.get("sub")  # 認証ユーザーID
 
     if not session_id:
-        return {"error": "session_id is required"}
+        yield {"type": "error", "message": "session_id is required"}
+        return
 
     memory_config = AgentCoreMemoryConfig(
         memory_id=os.getenv("MEMORY_ID"),

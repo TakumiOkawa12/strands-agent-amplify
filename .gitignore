@@ -29,3 +29,6 @@ amplify_outputs*
 amplifyconfiguration*
 
 .env
+.bedrock_agentcore.yaml
+.dockerignore
+.bedrock_agentcore/
