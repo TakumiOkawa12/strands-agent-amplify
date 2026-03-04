@@ -15,7 +15,7 @@ from botocore.config import Config
 
 # 1. モデル設定
 model = BedrockModel(
-    model_id=os.getenv("MODEL_ID"), # 環境変数からモデルIDを取得
+    model_id="anthropic.claude-sonnet-4-5-20250929-v1:0", # 環境変数からモデルIDを取得
 )
 
 # 2. ツール設定 (MCPClient)
@@ -31,8 +31,8 @@ def search_internal_docs(query: str) -> str:
     """
     Amzon Bedrock Knowledge Base (RAG)を使用して、S3ドキュメントから構築されたベクトルストアから関連するチャンクを取得するツール
     """
-    knowledge_base_id = os.getenv("KNOWLEDGE_BASE_ID")
-    region = os.getenv("AWS_REGION", "ap-northeast-1")
+    knowledge_base_id = "Q1QBMJHVJ0"
+    region = "ap-northeast-1"
 
     if not knowledge_base_id:
         return "Knowledge Base ID is not configured."
@@ -79,23 +79,23 @@ def search_internal_docs(query: str) -> str:
 
 # 3. メモリー設定（STM/LTM）
 memory_config = AgentCoreMemoryConfig(
-    memory_id=os.getenv("MEMORY_ID"),
+    memory_id='memory_56qe9-jLAsUQBoZt',
     session_id="aws_ops_handson",
     actor_id="ops_engineer",
     retrieval_config={
-        f"/strategies/{os.getenv('STRATEGY_ID')}/actors/ops_engineer/sessions/aws_ops_handson": RetrievalConfig()
+        f"/strategies/episodic_builtin_00exq-d7wet/actors/ops_engineer/sessions/aws_ops_handson": RetrievalConfig()
     }
 )
 
 session_manager = AgentCoreMemorySessionManager(
     agentcore_memory_config=memory_config,
-    region_name=os.getenv("AWS_REGION", "ap-northeast-1")
+    region_name="ap-northeast-1"
 )
 
 
 # 3. Code Interpreter ツール設定（ファイル解析用）
 code_interpreter_tool = AgentCoreCodeInterpreter(
-    region=os.getenv("AWS_REGION", "ap-northeast-1")
+    region="ap-northeast-1"
 )
 
 # 4. ステアリング設定（ポリシーの強制）
